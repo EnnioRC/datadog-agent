@@ -17,9 +17,10 @@ import (
 // Obfuscator quantizes and obfuscates spans. The obfuscator is not safe for
 // concurrent use.
 type Obfuscator struct {
-	opts  *Config
-	es    *jsonObfuscator // nil if disabled
-	mongo *jsonObfuscator // nil if disabled
+	opts     *Config
+	es       *jsonObfuscator // nil if disabled
+	mongo    *jsonObfuscator // nil if disabled
+	execPlan *jsonObfuscator // nil if disabled
 }
 
 // Config specifies the obfuscator configuration.
@@ -29,6 +30,9 @@ type Config struct {
 
 	// Mongo holds the obfuscation configuration for MongoDB queries.
 	Mongo JSONSettings
+
+	// Execution Plan JSON
+	SQLExecutionPlan JSONSettings
 
 	// RemoveQueryStrings specifies whether query strings should be removed from HTTP URLs.
 	RemoveQueryString bool
@@ -67,6 +71,8 @@ func (o *Obfuscator) SQLLiteralEscapes() bool {
 	return atomic.LoadInt32(&o.opts.sqlLiteralEscapes) == 1
 }
 
+var DefaultObfuscator = NewObfuscator(nil)
+
 // NewObfuscator creates a new Obfuscator.
 func NewObfuscator(cfg *Config) *Obfuscator {
 	if cfg == nil {
@@ -78,6 +84,9 @@ func NewObfuscator(cfg *Config) *Obfuscator {
 	}
 	if cfg.Mongo.Enabled {
 		o.mongo = newJSONObfuscator(&cfg.Mongo)
+	}
+	if cfg.SQLExecutionPlan.Enabled {
+		o.execPlan = newJSONObfuscator(&cfg.SQLExecutionPlan)
 	}
 	return &o
 }

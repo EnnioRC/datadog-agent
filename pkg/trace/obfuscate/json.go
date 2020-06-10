@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/pb"
+	"github.com/DataDog/datadog-agent/pkg/util/log"
 )
 
 // JSONSettings specifies the behaviour of the JSON obfuscator.
@@ -17,7 +18,8 @@ type JSONSettings struct {
 	Enabled bool
 
 	// KeepValues specifies a set of keys for which their values will not be obfuscated.
-	KeepValues []string
+	KeepValues         []string
+	ObfuscateSqlValues []string
 }
 
 // obfuscateJSON obfuscates the given span's tag using the given obfuscator. If the obfuscator is
@@ -34,15 +36,19 @@ func (o *Obfuscator) obfuscateJSON(span *pb.Span, tag string, obfuscator *jsonOb
 }
 
 type jsonObfuscator struct {
-	keepers map[string]bool // these keys will not be obfuscated
+	keepers      map[string]bool // these keys will not be obfuscated
+	obfuscateSql map[string]bool // the values under these keys pass through sql obfuscation
 
 	scan     *scanner // scanner
 	closures []bool   // closure stack, true if object (e.g. {[{ => []bool{true, false, true})
 	key      bool     // true if scanning a key
+	val      bool     // true if scanning a value
 
-	wiped     bool // true if obfuscation string (`"?"`) was already written for current value
-	keeping   bool // true if not obfuscating
-	keepDepth int  // the depth at which we've stopped obfuscating
+	wiped                  bool // true if obfuscation string (`"?"`) was already written for current value
+	keeping                bool // true if not obfuscating
+	sqlObfuscating         bool // true if sql obfuscating
+	keepDepth              int  // the depth at which we've stopped obfuscating
+	sqlObfuscator          *Obfuscator
 }
 
 func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
@@ -50,10 +56,15 @@ func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
 	for _, v := range cfg.KeepValues {
 		keepValue[v] = true
 	}
+	obfuscateSql := make(map[string]bool, len(cfg.ObfuscateSqlValues))
+	for _, v := range cfg.ObfuscateSqlValues {
+		obfuscateSql[v] = true
+	}
 	return &jsonObfuscator{
-		closures: []bool{},
-		keepers:  keepValue,
-		scan:     &scanner{},
+		closures:     []bool{},
+		keepers:      keepValue,
+		obfuscateSql: obfuscateSql,
+		scan:         &scanner{},
 	}
 }
 
@@ -66,9 +77,21 @@ func (p *jsonObfuscator) setKey() {
 	p.wiped = false
 }
 
+func trimSideQuotes(quotedString []byte) []byte {
+	if len(quotedString) > 0 && quotedString[0] == '"' {
+		quotedString = quotedString[1:]
+	}
+	if len(quotedString) > 0 && quotedString[len(quotedString) - 1] == '"' {
+		quotedString = quotedString[0:len(quotedString) - 1]
+	}
+	return quotedString
+}
+
 func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 	var out strings.Builder
-	buf := make([]byte, 0, 10) // recording key token
+
+	keyBuf := make([]byte, 0, 10) // recording key token
+	valBuf := make([]byte, 0, 10) // recording value
 	p.scan.reset()
 	for _, c := range data {
 		p.scan.bytes++
@@ -79,11 +102,13 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 			// object begins: {
 			p.closures = append(p.closures, true)
 			p.setKey()
+			p.sqlObfuscating = false
 
 		case scanBeginArray:
 			// array begins: [
 			p.closures = append(p.closures, false)
 			p.setKey()
+			p.sqlObfuscating = false
 
 		case scanEndArray, scanEndObject:
 			// array or object closing
@@ -95,15 +120,30 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 		case scanObjectValue, scanArrayValue:
 			// done scanning value
 			p.setKey()
-			if p.keeping && depth < p.keepDepth {
+			if p.sqlObfuscating {
+				result, err := DefaultObfuscator.ObfuscateSQLString(string(trimSideQuotes(valBuf)))
+				out.Write([]byte(`"`))
+				if err != nil {
+					log.Debugf("failed to obfuscate sql string: %s", err.Error())
+					out.Write([]byte("datadog-agent failed to obfuscate sql string. enable agent debug logs for more info."))
+				} else {
+					out.Write([]byte(result.Query))
+				}
+				out.Write([]byte(`"`))
+				p.sqlObfuscating = false
+				valBuf = valBuf[:0]
+			} else if p.keeping && depth < p.keepDepth {
 				p.keeping = false
 			}
 
 		case scanBeginLiteral, scanContinue:
 			// starting or continuing a literal
-			if p.key {
+			if p.sqlObfuscating {
+				valBuf = append(valBuf, c)
+				continue
+			} else if p.key {
 				// it's a key
-				buf = append(buf, c)
+				keyBuf = append(keyBuf, c)
 			} else if !p.keeping {
 				// it's a value we're not keeping
 				if !p.wiped {
@@ -115,13 +155,19 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 
 		case scanObjectKey:
 			// done scanning key
-			k := strings.Trim(string(buf), `"`)
+			k := strings.Trim(string(keyBuf), `"`)
 			if !p.keeping && p.keepers[k] {
 				// we should not obfuscate values of this key
 				p.keeping = true
 				p.keepDepth = depth + 1
+			} else if !p.sqlObfuscating && p.obfuscateSql[k] {
+				// the string value immediately following this key will be passed through sql string obfuscation
+				// if anything other than a literal is found then sql obfuscation is stopped and json obfuscation
+				// proceeds as usual
+				p.sqlObfuscating = true
 			}
-			buf = buf[:0]
+
+			keyBuf = keyBuf[:0]
 			p.key = false
 
 		case scanSkipSpace:
@@ -134,6 +180,7 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 			out.Write([]byte("..."))
 			return out.String(), p.scan.err
 		}
+
 		out.WriteByte(c)
 	}
 	if p.scan.eof() == scanError {
