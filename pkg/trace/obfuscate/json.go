@@ -129,7 +129,7 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 			// done scanning value
 			p.setKey()
 			if p.sqlObfuscating {
-				result, err := DefaultObfuscator.ObfuscateSQLString(string(trimSideQuotes(valBuf)))
+				result, err := defaultObfuscator.ObfuscateSQLString(string(trimSideQuotes(valBuf)))
 				out.Write([]byte(`"`))
 				if err != nil {
 					log.Debugf("failed to obfuscate sql string: %s", err.Error())
