@@ -42,7 +42,6 @@ type jsonObfuscator struct {
 	scan     *scanner // scanner
 	closures []bool   // closure stack, true if object (e.g. {[{ => []bool{true, false, true})
 	key      bool     // true if scanning a key
-	val      bool     // true if scanning a value
 
 	wiped          bool // true if obfuscation string (`"?"`) was already written for current value
 	keeping        bool // true if not obfuscating
