@@ -733,10 +733,7 @@ static PyObject *obfuscate_sql_exec_plan(PyObject *self, PyObject *args, PyObjec
         PyGILState_Release(gstate);
         return NULL;
     }
-    bool normalize = false;
-    if (PyBool_Check(normalizeObj) && normalizeObj == Py_True) {
-        normalize = true;
-    }
+    bool normalize = (PyBool_Check(normalizeObj) && normalizeObj == Py_True);
 
     char *error_message = NULL;
     char *obfPlan = cb_obfuscate_sql_exec_plan(rawPlan, normalize, &error_message);

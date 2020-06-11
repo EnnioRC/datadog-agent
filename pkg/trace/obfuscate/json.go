@@ -39,7 +39,7 @@ type ValueTransformer func(string) string
 
 type jsonObfuscator struct {
 	keepers         map[string]bool // these keys will not be obfuscated
-	transformValues map[string]bool // the values under these keys pass through the provided transformation function
+	transformValues map[string]bool // the values under these keys pass through the provided transformer
 	transformer     ValueTransformer
 
 	scan     *scanner // scanner
