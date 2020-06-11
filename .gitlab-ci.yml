@@ -279,7 +279,6 @@ run_tests_windows-x86:
   before_script:
     - source /root/.bashrc && conda activate $CONDA_ENV
     - pip install wheel
-    - pip install -r requirements.txt
     - GO111MODULE=off go get gopkg.in/yaml.v2
     - GO111MODULE=off go get github.com/stretchr/testify
     - inv -e rtloader.make --install-prefix=$SRC_PATH/dev --python-runtimes "$PYTHON_RUNTIMES"
