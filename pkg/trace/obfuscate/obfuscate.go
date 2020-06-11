@@ -80,13 +80,13 @@ func NewObfuscator(cfg *Config) *Obfuscator {
 	}
 	o := Obfuscator{opts: cfg}
 	if cfg.ES.Enabled {
-		o.es = newJSONObfuscator(&cfg.ES)
+		o.es = newJSONObfuscatorFromSettings(&cfg.ES)
 	}
 	if cfg.Mongo.Enabled {
-		o.mongo = newJSONObfuscator(&cfg.Mongo)
+		o.mongo = newJSONObfuscatorFromSettings(&cfg.Mongo)
 	}
 	if cfg.SQLExecutionPlan.Enabled {
-		o.execPlan = newJSONObfuscator(&cfg.SQLExecutionPlan)
+		o.execPlan = newJSONObfuscatorFromSettings(&cfg.SQLExecutionPlan)
 	}
 	return &o
 }

@@ -36,22 +36,22 @@ func (o *Obfuscator) obfuscateJSON(span *pb.Span, tag string, obfuscator *jsonOb
 }
 
 type jsonObfuscator struct {
-	keepers      map[string]bool // these keys will not be obfuscated
-	obfuscateSql map[string]bool // the values under these keys pass through sql obfuscation
+	keepers            map[string]bool // these keys will not be obfuscated
+	obfuscateSqlValues map[string]bool // the values under these keys pass through sql obfuscation
 
 	scan     *scanner // scanner
 	closures []bool   // closure stack, true if object (e.g. {[{ => []bool{true, false, true})
 	key      bool     // true if scanning a key
 	val      bool     // true if scanning a value
 
-	wiped                  bool // true if obfuscation string (`"?"`) was already written for current value
-	keeping                bool // true if not obfuscating
-	sqlObfuscating         bool // true if sql obfuscating
-	keepDepth              int  // the depth at which we've stopped obfuscating
-	sqlObfuscator          *Obfuscator
+	wiped          bool // true if obfuscation string (`"?"`) was already written for current value
+	keeping        bool // true if not obfuscating
+	sqlObfuscating bool // true if sql obfuscating
+	keepDepth      int  // the depth at which we've stopped obfuscating
+	sqlObfuscator  *Obfuscator
 }
 
-func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
+func newJSONObfuscatorFromSettings(cfg *JSONSettings) *jsonObfuscator {
 	keepValue := make(map[string]bool, len(cfg.KeepValues))
 	for _, v := range cfg.KeepValues {
 		keepValue[v] = true
@@ -61,10 +61,19 @@ func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
 		obfuscateSql[v] = true
 	}
 	return &jsonObfuscator{
-		closures:     []bool{},
-		keepers:      keepValue,
-		obfuscateSql: obfuscateSql,
-		scan:         &scanner{},
+		closures:           []bool{},
+		keepers:            keepValue,
+		obfuscateSqlValues: obfuscateSql,
+		scan:               &scanner{},
+	}
+}
+
+func newJSONObfuscator(keepValue map[string]bool, obfuscateSqlValues map[string]bool) *jsonObfuscator {
+	return &jsonObfuscator{
+		closures:           []bool{},
+		keepers:            keepValue,
+		obfuscateSqlValues: obfuscateSqlValues,
+		scan:               &scanner{},
 	}
 }
 
@@ -81,8 +90,8 @@ func trimSideQuotes(quotedString []byte) []byte {
 	if len(quotedString) > 0 && quotedString[0] == '"' {
 		quotedString = quotedString[1:]
 	}
-	if len(quotedString) > 0 && quotedString[len(quotedString) - 1] == '"' {
-		quotedString = quotedString[0:len(quotedString) - 1]
+	if len(quotedString) > 0 && quotedString[len(quotedString)-1] == '"' {
+		quotedString = quotedString[0 : len(quotedString)-1]
 	}
 	return quotedString
 }
@@ -160,7 +169,7 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 				// we should not obfuscate values of this key
 				p.keeping = true
 				p.keepDepth = depth + 1
-			} else if !p.sqlObfuscating && p.obfuscateSql[k] {
+			} else if !p.sqlObfuscating && p.obfuscateSqlValues[k] {
 				// the string value immediately following this key will be passed through sql string obfuscation
 				// if anything other than a literal is found then sql obfuscation is stopped and json obfuscation
 				// proceeds as usual

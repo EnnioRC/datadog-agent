@@ -343,7 +343,8 @@ func (o *Obfuscator) obfuscateSQL(span *pb.Span) {
 	traceutil.SetMeta(span, sqlQueryTag, oq.Query)
 }
 
-var sqlPlanNormalizationSettings = JSONSettings{
+// sqlPlanNormalizeSettings are JSON obfuscator settings for both obfuscating and normalizing SQL execution plans
+var sqlPlanNormalizeSettings = JSONSettings{
 	Enabled: true,
 	ObfuscateSqlValues: []string{
 		// mysql
@@ -379,8 +380,9 @@ var sqlPlanNormalizationSettings = JSONSettings{
 	},
 }
 
-// keep all cost related info
-var sqlPlanObfuscationSettings = JSONSettings{
+// sqlPlanObfuscateSettings are like sqlPlanNormalizeSettings except that all cost & row estimate information is left
+// unobfuscated
+var sqlPlanObfuscateSettings = JSONSettings{
 	Enabled: true,
 	KeepValues: append([]string{
 		// mysql
@@ -390,12 +392,28 @@ var sqlPlanObfuscationSettings = JSONSettings{
 		"Total Cost",
 		"Plan Rows",
 		"Plan Width",
-	}, sqlPlanNormalizationSettings.KeepValues...),
-	ObfuscateSqlValues: sqlPlanNormalizationSettings.ObfuscateSqlValues,
+	}, sqlPlanNormalizeSettings.KeepValues...),
+	ObfuscateSqlValues: sqlPlanNormalizeSettings.ObfuscateSqlValues,
 }
 
-// ObfuscateSQLJsonExecutionPlan TODO
-func (o *Obfuscator) ObfuscateSQLJsonExecutionPlan(rawJsonPlan string) (string, error) {
-	jsonObf := newJSONObfuscator(&sqlPlanObfuscationSettings)
-	return jsonObf.obfuscate([]byte(rawJsonPlan))
+func keySet(keys []string) map[string]bool {
+	m := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		m[k] = true
+	}
+	return m
+}
+
+var sqlPlanNormalizeKeepValues = keySet(sqlPlanNormalizeSettings.KeepValues)
+var sqlPlanObfuscateKeepValues = keySet(sqlPlanObfuscateSettings.KeepValues)
+var sqlPlanObfuscateKeys = keySet(sqlPlanObfuscateSettings.ObfuscateSqlValues)
+
+// ObfuscateSQLExecPlan obfuscates query conditions in the provided JSON encoded execution plan. If normalize=True,
+// then cost and row estimates are also obfuscated away.
+func (o *Obfuscator) ObfuscateSQLExecPlan(jsonPlan string, normalize bool) (string, error) {
+	if normalize {
+		return newJSONObfuscator(sqlPlanNormalizeKeepValues, sqlPlanObfuscateKeys).obfuscate([]byte(jsonPlan))
+	} else {
+		return newJSONObfuscator(sqlPlanObfuscateKeepValues, sqlPlanObfuscateKeys).obfuscate([]byte(jsonPlan))
+	}
 }
