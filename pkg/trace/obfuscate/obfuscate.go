@@ -67,8 +67,6 @@ func (o *Obfuscator) SQLLiteralEscapes() bool {
 	return atomic.LoadInt32(&o.opts.sqlLiteralEscapes) == 1
 }
 
-var defaultObfuscator = NewObfuscator(nil)
-
 // NewObfuscator creates a new Obfuscator.
 func NewObfuscator(cfg *Config) *Obfuscator {
 	if cfg == nil {
@@ -76,10 +74,10 @@ func NewObfuscator(cfg *Config) *Obfuscator {
 	}
 	o := Obfuscator{opts: cfg}
 	if cfg.ES.Enabled {
-		o.es = newJSONObfuscatorFromSettings(&cfg.ES)
+		o.es = newJSONObfuscator(&cfg.ES)
 	}
 	if cfg.Mongo.Enabled {
-		o.mongo = newJSONObfuscatorFromSettings(&cfg.Mongo)
+		o.mongo = newJSONObfuscator(&cfg.Mongo)
 	}
 	return &o
 }

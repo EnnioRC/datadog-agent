@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/pb"
-	"github.com/DataDog/datadog-agent/pkg/util/log"
 )
 
 // JSONSettings specifies the behaviour of the JSON obfuscator.
@@ -18,8 +17,9 @@ type JSONSettings struct {
 	Enabled bool
 
 	// KeepValues specifies a set of keys for which their values will not be obfuscated.
-	KeepValues         []string
-	ObfuscateSqlValues []string
+	KeepValues      []string
+	TransformValues []string
+	TransformerType string
 }
 
 // obfuscateJSON obfuscates the given span's tag using the given obfuscator. If the obfuscator is
@@ -35,44 +35,42 @@ func (o *Obfuscator) obfuscateJSON(span *pb.Span, tag string, obfuscator *jsonOb
 	// as much of it as we could. It is safe to accept the output, even if partial.
 }
 
+type ValueTransformer func(string) string
+
 type jsonObfuscator struct {
-	keepers            map[string]bool // these keys will not be obfuscated
-	obfuscateSqlValues map[string]bool // the values under these keys pass through sql obfuscation
+	keepers         map[string]bool // these keys will not be obfuscated
+	transformValues map[string]bool // the values under these keys pass through the provided transformation function
+	transformer     ValueTransformer
 
 	scan     *scanner // scanner
 	closures []bool   // closure stack, true if object (e.g. {[{ => []bool{true, false, true})
 	key      bool     // true if scanning a key
 
-	wiped          bool // true if obfuscation string (`"?"`) was already written for current value
-	keeping        bool // true if not obfuscating
-	sqlObfuscating bool // true if collecting the next literal for sql obfuscation
-	keepDepth      int  // the depth at which we've stopped obfuscating
-	sqlObfuscator  *Obfuscator
+	wiped             bool // true if obfuscation string (`"?"`) was already written for current value
+	keeping           bool // true if not obfuscating
+	transformingValue bool // true if collecting the next literal for transformation
+	keepDepth         int  // the depth at which we've stopped obfuscating
 }
 
-func newJSONObfuscatorFromSettings(cfg *JSONSettings) *jsonObfuscator {
+func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
 	keepValue := make(map[string]bool, len(cfg.KeepValues))
 	for _, v := range cfg.KeepValues {
 		keepValue[v] = true
 	}
-	obfuscateSql := make(map[string]bool, len(cfg.ObfuscateSqlValues))
-	for _, v := range cfg.ObfuscateSqlValues {
-		obfuscateSql[v] = true
+	transformValues := make(map[string]bool, len(cfg.TransformValues))
+	for _, v := range cfg.TransformValues {
+		transformValues[v] = true
+	}
+	var transformer ValueTransformer
+	if cfg.TransformerType == "obfuscate_sql" {
+		transformer = NewObfuscator(nil).ObfuscateSqlStringSafe
 	}
 	return &jsonObfuscator{
-		closures:           []bool{},
-		keepers:            keepValue,
-		obfuscateSqlValues: obfuscateSql,
-		scan:               &scanner{},
-	}
-}
-
-func newJSONObfuscator(keepValue map[string]bool, obfuscateSqlValues map[string]bool) *jsonObfuscator {
-	return &jsonObfuscator{
-		closures:           []bool{},
-		keepers:            keepValue,
-		obfuscateSqlValues: obfuscateSqlValues,
-		scan:               &scanner{},
+		closures:        []bool{},
+		keepers:         keepValue,
+		transformValues: transformValues,
+		transformer:     transformer,
+		scan:            &scanner{},
 	}
 }
 
@@ -110,13 +108,13 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 			// object begins: {
 			p.closures = append(p.closures, true)
 			p.setKey()
-			p.sqlObfuscating = false
+			p.transformingValue = false
 
 		case scanBeginArray:
 			// array begins: [
 			p.closures = append(p.closures, false)
 			p.setKey()
-			p.sqlObfuscating = false
+			p.transformingValue = false
 
 		case scanEndArray, scanEndObject:
 			// array or object closing
@@ -128,17 +126,12 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 		case scanObjectValue, scanArrayValue:
 			// done scanning value
 			p.setKey()
-			if p.sqlObfuscating {
-				result, err := defaultObfuscator.ObfuscateSQLString(string(trimSideQuotes(valBuf)))
+			if p.transformingValue && p.transformer != nil {
+				result := p.transformer(string(trimSideQuotes(valBuf)))
 				out.Write([]byte(`"`))
-				if err != nil {
-					log.Debugf("failed to obfuscate sql string: %s", err.Error())
-					out.Write([]byte("datadog-agent failed to obfuscate sql string. enable agent debug logs for more info."))
-				} else {
-					out.Write([]byte(result.Query))
-				}
+				out.Write([]byte(result))
 				out.Write([]byte(`"`))
-				p.sqlObfuscating = false
+				p.transformingValue = false
 				valBuf = valBuf[:0]
 			} else if p.keeping && depth < p.keepDepth {
 				p.keeping = false
@@ -146,7 +139,7 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 
 		case scanBeginLiteral, scanContinue:
 			// starting or continuing a literal
-			if p.sqlObfuscating {
+			if p.transformingValue {
 				valBuf = append(valBuf, c)
 				continue
 			} else if p.key {
@@ -168,11 +161,11 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 				// we should not obfuscate values of this key
 				p.keeping = true
 				p.keepDepth = depth + 1
-			} else if !p.sqlObfuscating && p.obfuscateSqlValues[k] {
+			} else if !p.transformingValue && p.transformer != nil && p.transformValues[k] {
 				// the string value immediately following this key will be passed through sql string obfuscation
 				// if anything other than a literal is found then sql obfuscation is stopped and json obfuscation
 				// proceeds as usual
-				p.sqlObfuscating = true
+				p.transformingValue = true
 			}
 
 			keyBuf = keyBuf[:0]

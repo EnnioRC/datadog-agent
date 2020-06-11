@@ -488,9 +488,10 @@
 		</Test>
 		<Test>
 			<Tag>obfuscate.sql.json.basic</Tag>
-			<ObfuscateSqlValues>
+			<TransformValues>
 				<key>query</key>
-			</ObfuscateSqlValues>
+			</TransformValues>
+			<TransformerType>obfuscate_sql</TransformerType>
 			<KeepValues>
 				<key>hello</key>
 			</KeepValues>
@@ -499,25 +500,28 @@
 		</Test>
 		<Test>
 			<Tag>obfuscate.sql.json.tried_sql_obfuscate_an_object</Tag>
-			<ObfuscateSqlValues>
+			<TransformValues>
 				<key>object</key>
-			</ObfuscateSqlValues>
+			</TransformValues>
+			<TransformerType>obfuscate_sql</TransformerType>
 			<In>{"object": {"not a": "query"}}</In>
 			<Out>{"object": {"not a": "?"}}</Out>
 		</Test>
 		<Test>
 			<Tag>obfuscate.sql.json.tried_sql_obfuscate_an_array</Tag>
-			<ObfuscateSqlValues>
+			<TransformValues>
 				<key>object</key>
-			</ObfuscateSqlValues>
+			</TransformValues>
+			<TransformerType>obfuscate_sql</TransformerType>
 			<In>{"object": ["not", "a", "query"]}</In>
 			<Out>{"object": ["?", "?", "?"]}</Out>
 		</Test>
 		<Test>
 			<Tag>normalize.sql.plan.mysql</Tag>
-			<ObfuscateSqlValues>
+			<TransformValues>
 				<key>attached_condition</key>
-			</ObfuscateSqlValues>
+			</TransformValues>
+			<TransformerType>obfuscate_sql</TransformerType>
 			<KeepValues>
 				<key>select_id</key>
 				<key>using_filesort</key>
@@ -616,13 +620,14 @@
 		</Test>
 		<Test>
 			<Tag>normalize.sql.plan.postgres</Tag>
-			<ObfuscateSqlValues>
+			<TransformValues>
 				<key>Index Cond</key>
 				<key>Recheck Cond</key>
 				<key>Merge Cond</key>
 				<key>Hash Cond</key>
 				<key>Join Filter</key>
-			</ObfuscateSqlValues>
+			</TransformValues>
+			<TransformerType>obfuscate_sql</TransformerType>
 			<KeepValues>
 				<key>Node Type</key>
 				<key>Parallel Aware</key>

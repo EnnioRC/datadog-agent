@@ -27,12 +27,13 @@ type xmlObfuscateTests struct {
 }
 
 type xmlObfuscateTest struct {
-	Tag                string
-	DontNormalize      bool // this test contains invalid JSON
-	In                 string
-	Out                string
-	KeepValues         []string `xml:"KeepValues>key"`
-	ObfuscateSqlValues []string `xml:"ObfuscateSqlValues>key"`
+	Tag             string
+	DontNormalize   bool // this test contains invalid JSON
+	In              string
+	Out             string
+	TransformerType string
+	KeepValues      []string `xml:"KeepValues>key"`
+	TransformValues []string `xml:"TransformValues>key"`
 }
 
 // loadTests loads all XML tests from ./testdata/obfuscate.xml
@@ -100,8 +101,8 @@ func TestObfuscateJSON(t *testing.T) {
 	runTest := func(s *xmlObfuscateTest) func(*testing.T) {
 		return func(t *testing.T) {
 			assert := assert.New(t)
-			cfg := &JSONSettings{KeepValues: s.KeepValues, ObfuscateSqlValues: s.ObfuscateSqlValues}
-			out, err := newJSONObfuscatorFromSettings(cfg).obfuscate([]byte(s.In))
+			cfg := &JSONSettings{KeepValues: s.KeepValues, TransformValues: s.TransformValues, TransformerType: s.TransformerType}
+			out, err := newJSONObfuscator(cfg).obfuscate([]byte(s.In))
 			if !s.DontNormalize {
 				assert.NoError(err)
 				assertEqualJson(t, s.Out, out)
@@ -134,7 +135,7 @@ func BenchmarkObfuscateJSON(b *testing.B) {
 		b.Run(strconv.Itoa(len(test.In)), func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_, err := newJSONObfuscatorFromSettings(cfg).obfuscate([]byte(test.In))
+				_, err := newJSONObfuscator(cfg).obfuscate([]byte(test.In))
 				if !test.DontNormalize && err != nil {
 					b.Fatal(err)
 				}

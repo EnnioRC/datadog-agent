@@ -346,7 +346,7 @@ func (o *Obfuscator) obfuscateSQL(span *pb.Span) {
 // sqlPlanNormalizeSettings are JSON obfuscator settings for both obfuscating and normalizing SQL execution plans
 var sqlPlanNormalizeSettings = JSONSettings{
 	Enabled: true,
-	ObfuscateSqlValues: []string{
+	TransformValues: []string{
 		// mysql
 		"attached_condition",
 		// postgres
@@ -393,7 +393,7 @@ var sqlPlanObfuscateSettings = JSONSettings{
 		"Plan Rows",
 		"Plan Width",
 	}, sqlPlanNormalizeSettings.KeepValues...),
-	ObfuscateSqlValues: sqlPlanNormalizeSettings.ObfuscateSqlValues,
+	TransformValues: sqlPlanNormalizeSettings.TransformValues,
 }
 
 func keySet(keys []string) map[string]bool {
@@ -406,14 +406,30 @@ func keySet(keys []string) map[string]bool {
 
 var sqlPlanNormalizeKeepValues = keySet(sqlPlanNormalizeSettings.KeepValues)
 var sqlPlanObfuscateKeepValues = keySet(sqlPlanObfuscateSettings.KeepValues)
-var sqlPlanObfuscateKeys = keySet(sqlPlanObfuscateSettings.ObfuscateSqlValues)
+var sqlPlanObfuscateKeys = keySet(sqlPlanObfuscateSettings.TransformValues)
+
+func (o *Obfuscator) ObfuscateSqlStringSafe(sqlString string) string {
+	result, err := o.ObfuscateSQLString(sqlString)
+	if err != nil {
+		log.Debugf("failed to obfuscate sql string: %s", err.Error())
+		return "datadog-agent failed to obfuscate sql string. enable agent debug logs for more info."
+	}
+	return result.Query
+}
 
 // ObfuscateSQLExecPlan obfuscates query conditions in the provided JSON encoded execution plan. If normalize=True,
 // then cost and row estimates are also obfuscated away.
 func (o *Obfuscator) ObfuscateSQLExecPlan(jsonPlan string, normalize bool) (string, error) {
-	if normalize {
-		return newJSONObfuscator(sqlPlanNormalizeKeepValues, sqlPlanObfuscateKeys).obfuscate([]byte(jsonPlan))
-	} else {
-		return newJSONObfuscator(sqlPlanObfuscateKeepValues, sqlPlanObfuscateKeys).obfuscate([]byte(jsonPlan))
+	jsonObf := &jsonObfuscator{
+		closures:        []bool{},
+		transformValues: sqlPlanObfuscateKeys,
+		transformer:     o.ObfuscateSqlStringSafe,
+		scan:            &scanner{},
 	}
+	if normalize {
+		jsonObf.keepers = sqlPlanNormalizeKeepValues;
+	} else {
+		jsonObf.keepers = sqlPlanObfuscateKeepValues
+	}
+	return jsonObf.obfuscate([]byte(jsonPlan))
 }
