@@ -278,7 +278,6 @@ run_tests_windows-x86:
   needs: ["fail_on_non_triggered_tag"]
   before_script:
     - source /root/.bashrc && conda activate $CONDA_ENV
-    - pip install wheel
     - GO111MODULE=off go get gopkg.in/yaml.v2
     - GO111MODULE=off go get github.com/stretchr/testify
     - inv -e rtloader.make --install-prefix=$SRC_PATH/dev --python-runtimes "$PYTHON_RUNTIMES"
@@ -347,7 +346,6 @@ run_tests_ebpf:
   before_script:
     - mkdir -p $CI_PROJECT_DIR/.tmp/binary-ebpf
     - cd $SRC_PATH
-    - pip3 install -r requirements.txt
     - inv -e deps --verbose --dep-vendor-only --no-checks
     # Retrieve libbcc from S3
     - $S3_CP_CMD $S3_ARTIFACTS_URI/libbcc-amd64.tar.xz /tmp/libbcc.tar.xz
@@ -399,8 +397,6 @@ run_go_tidy_check:
   tags: [ "runner:main", "size:large" ]
   before_script:
     - cd $SRC_PATH
-    - pip install --upgrade --ignore-installed pip setuptools
-    - pip install -r requirements.txt
     - inv -e deps --no-dep-ensure --no-checks
   script:
     # Print a message and fail if "go mod tidy" modifies go.mod
@@ -1345,8 +1341,6 @@ agent_android_apk:
   before_script:
     - echo running android before_script
     - cd $SRC_PATH
-    - pip install -U pip
-    - pip install -r requirements.txt
     - inv -e deps --android --dep-vendor-only --no-checks
     # Some Android license has changed, we have to accept the new version.
     # But on top of that, there is a bug in sdkmanager not updating correctly
