@@ -45,7 +45,7 @@ type jsonObfuscator struct {
 
 	wiped          bool // true if obfuscation string (`"?"`) was already written for current value
 	keeping        bool // true if not obfuscating
-	sqlObfuscating bool // true if sql obfuscating
+	sqlObfuscating bool // true if collecting the next literal for sql obfuscation
 	keepDepth      int  // the depth at which we've stopped obfuscating
 	sqlObfuscator  *Obfuscator
 }
@@ -188,7 +188,6 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 			out.Write([]byte("..."))
 			return out.String(), p.scan.err
 		}
-
 		out.WriteByte(c)
 	}
 	if p.scan.eof() == scanError {
