@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/pb"
+	"github.com/DataDog/datadog-agent/pkg/util/log"
 )
 
 // JSONSettings specifies the behaviour of the JSON obfuscator.
@@ -38,9 +39,9 @@ func (o *Obfuscator) obfuscateJSON(span *pb.Span, tag string, obfuscator *jsonOb
 type ValueTransformer func(string) string
 
 type jsonObfuscator struct {
-	keepers         map[string]bool // these keys will not be obfuscated
-	transformValues map[string]bool // the values under these keys pass through the provided transformer
-	transformer     ValueTransformer
+	keepKeys      map[string]bool // these keys will not be obfuscated
+	transformKeys map[string]bool // these keys pass through the transformer
+	transformer   ValueTransformer
 
 	scan     *scanner // scanner
 	closures []bool   // closure stack, true if object (e.g. {[{ => []bool{true, false, true})
@@ -57,20 +58,25 @@ func newJSONObfuscator(cfg *JSONSettings) *jsonObfuscator {
 	for _, v := range cfg.KeepValues {
 		keepValue[v] = true
 	}
-	transformValues := make(map[string]bool, len(cfg.TransformValues))
-	for _, v := range cfg.TransformValues {
-		transformValues[v] = true
-	}
+	var transformValues map[string]bool
 	var transformer ValueTransformer
 	if cfg.TransformerType == "obfuscate_sql" {
 		transformer = NewObfuscator(nil).ObfuscateSqlStringSafe
+	} else {
+		log.Warnf("unknown JSON value transformer type %s", cfg.TransformerType)
+	}
+	if transformer != nil {
+		transformValues = make(map[string]bool, len(cfg.TransformValues))
+		for _, v := range cfg.TransformValues {
+			transformValues[v] = true
+		}
 	}
 	return &jsonObfuscator{
-		closures:        []bool{},
-		keepers:         keepValue,
-		transformValues: transformValues,
-		transformer:     transformer,
-		scan:            &scanner{},
+		closures:      []bool{},
+		keepKeys:      keepValue,
+		transformKeys: transformValues,
+		transformer:   transformer,
+		scan:          &scanner{},
 	}
 }
 
@@ -157,11 +163,11 @@ func (p *jsonObfuscator) obfuscate(data []byte) (string, error) {
 		case scanObjectKey:
 			// done scanning key
 			k := strings.Trim(string(keyBuf), `"`)
-			if !p.keeping && p.keepers[k] {
+			if !p.keeping && p.keepKeys[k] {
 				// we should not obfuscate values of this key
 				p.keeping = true
 				p.keepDepth = depth + 1
-			} else if !p.transformingValue && p.transformer != nil && p.transformValues[k] {
+			} else if !p.transformingValue && p.transformer != nil && p.transformKeys[k] {
 				// the string value immediately following this key will be passed through sql string obfuscation
 				// if anything other than a literal is found then sql obfuscation is stopped and json obfuscation
 				// proceeds as usual

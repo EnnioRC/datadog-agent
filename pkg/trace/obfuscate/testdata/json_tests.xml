@@ -499,6 +499,18 @@
 			<Out>{"query": "select * from table where id = ?", "hello": "world", "hi": "?"}</Out>
 		</Test>
 		<Test>
+			<Tag>obfuscate.sql.json.invalid_transformer_type</Tag>
+			<TransformValues>
+				<key>query</key>
+			</TransformValues>
+			<TransformerType>fake_transformer</TransformerType>
+			<KeepValues>
+				<key>hello</key>
+			</KeepValues>
+			<In>{"query": "select * from table where id = 2", "hello": "world", "hi": "there"}</In>
+			<Out>{"query": "?", "hello": "world", "hi": "?"}</Out>
+		</Test>
+		<Test>
 			<Tag>obfuscate.sql.json.tried_sql_obfuscate_an_object</Tag>
 			<TransformValues>
 				<key>object</key>

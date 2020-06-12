@@ -420,16 +420,17 @@ func (o *Obfuscator) ObfuscateSqlStringSafe(sqlString string) string {
 // ObfuscateSQLExecPlan obfuscates query conditions in the provided JSON encoded execution plan. If normalize=True,
 // then cost and row estimates are also obfuscated away.
 func (o *Obfuscator) ObfuscateSQLExecPlan(jsonPlan string, normalize bool) (string, error) {
+	// jsonObfuscator is not thread safe so we need a new instance for plan
 	jsonObf := &jsonObfuscator{
-		closures:        []bool{},
-		transformValues: sqlPlanObfuscateKeys,
-		transformer:     o.ObfuscateSqlStringSafe,
-		scan:            &scanner{},
+		closures:      []bool{},
+		transformKeys: sqlPlanObfuscateKeys,
+		transformer:   o.ObfuscateSqlStringSafe,
+		scan:          &scanner{},
 	}
 	if normalize {
-		jsonObf.keepers = sqlPlanNormalizeKeepValues;
+		jsonObf.keepKeys = sqlPlanNormalizeKeepValues;
 	} else {
-		jsonObf.keepers = sqlPlanObfuscateKeepValues
+		jsonObf.keepKeys = sqlPlanObfuscateKeepValues
 	}
 	return jsonObf.obfuscate([]byte(jsonPlan))
 }
